@@ -36,6 +36,7 @@
 #include <tf2/LinearMath/Quaternion.h>
 #include <mutex>
 #include <string>
+#include <algorithm>
 
 #include "../include/rox_argo_kinematics/OmniKinematics.h"
 #include "../include/rox_argo_kinematics/VelocitySolver.h"
@@ -73,6 +74,8 @@ public:
     this->declare_parameter<double>("steer_hysteresis", 30.0);
     this->declare_parameter<double>("steer_hysteresis_dynamic", 5.0);
     this->declare_parameter<bool>("reset_odom", false);
+    this->declare_parameter<double>("max_linear_velocity", 0.3);
+    this->declare_parameter<double>("max_angular_velocity", 0.3);
 
     if (!this->get_parameter("num_wheels", m_num_wheels)) {
       throw std::logic_error("missing num_wheels param");
@@ -88,6 +91,8 @@ public:
     this->get_parameter_or("broadcast_tf", m_broadcast_tf, true);
     this->get_parameter_or("cmd_timeout", m_cmd_timeout, 0.1);
     this->get_parameter_or("control_rate", m_control_rate, 50.0);
+    this->get_parameter_or("max_linear_velocity", m_max_linear_velocity, 0.3);
+    this->get_parameter_or("max_angular_velocity", m_max_angular_velocity, 0.3);
 
     if (m_num_wheels < 2) {
       throw std::logic_error("invalid num_wheels param");
@@ -185,6 +190,17 @@ public:
       m_wheels, m_last_cmd_vel.linear.x,
       m_last_cmd_vel.linear.y, m_last_cmd_vel.angular.z);
 
+    // Apply velocity limits to wheel velocities
+    for (auto& wheel : cmd_wheels) {
+      // Calculate the maximum allowed wheel velocity based on max_linear_velocity
+      const double max_wheel_vel = m_max_linear_velocity;
+      
+      // Limit the wheel velocity if it exceeds the maximum
+      if (std::abs(wheel.wheel_vel) > max_wheel_vel) {
+        wheel.wheel_vel = (wheel.wheel_vel > 0) ? max_wheel_vel : -max_wheel_vel;
+      }
+    }
+
     trajectory_msgs::msg::JointTrajectory joint_trajectory;
 
     joint_trajectory.header.stamp = now;
@@ -218,9 +234,11 @@ private:
   {
     std::lock_guard<std::mutex> lock(m_node_mutex);
     m_last_cmd_time = rclcpp::Clock().now();
-    m_last_cmd_vel.linear.x = twist->linear.x;
-    m_last_cmd_vel.linear.y = twist->linear.y;
-    m_last_cmd_vel.angular.z = twist->angular.z;      
+    
+    // Apply velocity limits to input commands
+    m_last_cmd_vel.linear.x = std::clamp(twist->linear.x, -m_max_linear_velocity, m_max_linear_velocity);
+    m_last_cmd_vel.linear.y = std::clamp(twist->linear.y, -m_max_linear_velocity, m_max_linear_velocity);
+    m_last_cmd_vel.angular.z = std::clamp(twist->angular.z, -m_max_angular_velocity, m_max_angular_velocity);
   }
 
   void joint_state_callback(const sensor_msgs::msg::JointState::SharedPtr joint_state)
@@ -382,6 +400,8 @@ private:
   double m_wheel_lever_arm = 0;
   double m_cmd_timeout = 0;
   double m_control_rate = 0;
+  double m_max_linear_velocity = 0.3;
+  double m_max_angular_velocity = 0.3;
 
   std::vector<OmniWheel> m_wheels;
 
