@@ -162,17 +162,20 @@ public:
     m_kinematics->steer_hysteresis = M_PI * m_kinematics->steer_hysteresis / 180;
     m_kinematics->steer_hysteresis_dynamic = M_PI * m_kinematics->steer_hysteresis_dynamic / 180;
     m_kinematics->initialize(m_wheels);
+
+    m_clock = this->get_clock();
+    m_last_cmd_time = m_clock->now();
   }
 
   void control_step()
   {
     std::lock_guard<std::mutex> lock(m_node_mutex);
 
-    auto now = rclcpp::Clock().now();
+    auto now = m_clock->now();
 
     // check for input timeout
     if ((now - m_last_cmd_time).seconds() > m_cmd_timeout) {
-      if (!is_cmd_timeout && !m_last_cmd_time.seconds() == 0 &&
+      if (!is_cmd_timeout && m_last_cmd_time.seconds() > 0 &&
         (m_last_cmd_vel.linear.x != 0 || m_last_cmd_vel.linear.y != 0 ||
         m_last_cmd_vel.angular.z != 0))
       {
@@ -233,7 +236,7 @@ private:
   void cmd_vel_callback(const geometry_msgs::msg::Twist::SharedPtr twist)
   {
     std::lock_guard<std::mutex> lock(m_node_mutex);
-    m_last_cmd_time = rclcpp::Clock().now();
+    m_last_cmd_time = m_clock->now();
     
     // Apply velocity limits to input commands
     m_last_cmd_vel.linear.x = std::clamp(twist->linear.x, -m_max_linear_velocity, m_max_linear_velocity);
@@ -384,6 +387,7 @@ private:
   std::mutex m_node_mutex;
 
   rclcpp::TimerBase::SharedPtr timer_;
+  rclcpp::Clock::SharedPtr m_clock;
   rclcpp::Publisher<nav_msgs::msg::Odometry>::SharedPtr m_pub_odometry;
   rclcpp::Publisher<trajectory_msgs::msg::JointTrajectory>::SharedPtr m_pub_joint_trajectory;
   rclcpp::Publisher<neo_msgs2::msg::KinematicsState>::SharedPtr m_pub_kinematics_state;
