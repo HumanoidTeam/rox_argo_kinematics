@@ -148,7 +148,7 @@ public:
       std::bind(&ArgoKinematicsNode::cmd_vel_callback, this, _1));
     m_sub_joint_state =
       this->create_subscription<sensor_msgs::msg::JointState>(
-      "drive/joint_states", 1,
+      "wheels/joint_states", 1,
       std::bind(&ArgoKinematicsNode::joint_state_callback, this, _1));
 
     m_kinematics = std::make_shared<OmniKinematics>(m_num_wheels);
